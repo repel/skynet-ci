@@ -1,0 +1,10 @@
+{
+  "redis": "redis://serverhost:port",
+  "mongo": {
+    "host": "somehostat.mlab.com",
+    "port": "17195",
+    "db": "skynet",
+    "user": "skynet",
+    "password": "skynet"
+  }
+}

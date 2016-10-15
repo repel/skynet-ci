@@ -1,0 +1,26 @@
+{
+  "name": "skynet-ci",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/repel/skynet-ci.git"
+  },
+  "author": "Charles Russell",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/repel/skynet-ci/issues"
+  },
+  "homepage": "https://github.com/repel/skynet-ci#readme",
+  "dependencies": {
+    "config": "^1.21.0",
+    "debug": "^2.2.0",
+    "mongoose": "^4.6.3",
+    "node-uuid": "^1.4.7",
+    "redis": "^2.6.2"
+  }
+}
