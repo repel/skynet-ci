@@ -11,6 +11,7 @@ if (cluster.isMaster) {
     // Create cluster unique identifier
     _clusterId = require('node-uuid').v4();
     debug('Initializing Cluster Master with ID: ' + _clusterId);
+    debug('Process id of master thread is: ' + process.pid);
     Initialize(function(){
          // Setup interesting events
     cluster.on('exit', function(worker,code,signal){
@@ -25,42 +26,24 @@ if (cluster.isMaster) {
         debug('worker with process id ' + worker.process.pid + ' just exited');
         spawnWorker();
     });
-
-    process.on('SIGINT', function(){
-        debug("Shutting down connected services, process is terminating");
-        debug('Closing Mongodb Connection');
-        mongoose.connection.close(function(){
-            debug("Mongodb connection closed");
-        });
-    })
+    process.on('uncaughtException', exitHandler.bind(null,{exit:true}));
 
     // Perform CI Setup here.
     debug('Completed setup, spawning worker');
     spawnWorker();
     });
-
-} else if (cluster.isWorker) {
+}
+else if (cluster.isWorker) {
     debug('Worker initializing using clusterId ' + process.env['SKYNET_CLUSTERID']);
     debug('Worker process id is: ' + cluster.worker.process.pid);
-}
+};
 
 function spawnWorker() {
     debug('Spawning new worker');
     var worker_env ={};
     worker_env['SKYNET_CLUSTERID'] = _clusterId;
     cluster.fork(worker_env);
-}
-
-function initialize_step2(cb) {
-    debug('Beginning step 2 of initialization');
-    initialize_redis(function(){
-        // Initialize mongodb
-        initialize_mongo(function(){
-            cb();
-        })
-
-    })
-}
+};
 function Initialize(cb) {
     if (typeof(process.env.NODE_ENV) === 'undefined') {
         debug("You've not assigned a value to NODE_ENV.  Looking for config/default.json");
@@ -85,15 +68,23 @@ function Initialize(cb) {
 
     //client = redis.createClient("redis://redis-18170.c10.us-east-1-2.ec2.cloud.redislabs.com:18170");
     //config = require('config');
-}
+};
+function initialize_step2(cb) {
+    debug('Beginning step 2 of initialization');
+    initialize_redis(function(){
+        // Initialize mongodb
+        initialize_mongo(function(){
+            cb();
+        });
 
+    });
+};
 function shutdownCluster(reason){
     debug(reason);
     cluster.disconnect(function(){
         process.exit(-1);
     })
-}
-
+};
 function initialize_mongo(cb) {
     debug('Initializing MONGOOSE Client and establishing connection to server');
     if (config.mongo == null) {
@@ -118,7 +109,7 @@ function initialize_mongo(cb) {
 
 
     }
-}
+};
 function initialize_redis(cb) {
     debug('Initializing REDIS Client and establishing connection to server');
     if (config.redis == ''){
@@ -145,4 +136,20 @@ function initialize_redis(cb) {
 
 
     }
-}
+};
+function exitHandler(options,err) {
+    debug('Exit Handler invoked...');
+    if (options.cleanup || options.exit || options.cleanup===null) {
+        debug("Shutting down connected services, process is terminating");
+        debug('Closing Mongodb Connection');
+        mongoose.connection.close(function(){
+            debug("Mongodb connection closed");
+        });
+        debug('Flushing REDIS client data to server');
+    }
+
+    if (err) {
+        debug("Processing error occurred, see Stack trace info below:");
+        debug(err.stack);
+    }
+};

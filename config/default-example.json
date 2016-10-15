@@ -1,7 +1,7 @@
 {
-  "redis": "redis://serverhost:port",
+  "redis": "redis://serverhost:port", // You can sign up for free account at redislabs
   "mongo": {
-    "host": "somehostat.mlab.com",
+    "host": "somehostat.mlab.com", // You can sign up for a free account at mlabs.
     "port": "17195",
     "db": "skynet",
     "user": "skynet",
