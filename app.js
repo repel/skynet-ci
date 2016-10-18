@@ -2,10 +2,14 @@ var debug = require('debug')('app'),
     redis = require('redis'),
     mongoose = require('mongoose'),
     cluster = require('cluster'),
+    path = require('path'),
     fs = require('fs'),
     config,
     _clusterId,
-    client;
+    client,
+    lock,
+    models = require(path.join(__dirname,'models'))('mongoose'),
+    Master = mongoose.model('Master');
 
 if (cluster.isMaster) {
     // Create cluster unique identifier
@@ -74,17 +78,62 @@ function initialize_step2(cb) {
     initialize_redis(function(){
         // Initialize mongodb
         initialize_mongo(function(){
-            cb();
+            redisMasterRegistration(_clusterId,function(){
+                debug('Continuing with setup of Master cluster id: ' + _clusterId);
+            });
+
         });
 
     });
-};
+}
+function mongodbMasterRegistration(clusterId,cb) {
+    Master.create({
+        master_id:clusterId
+    }, function (err,master) {
+        if(err) {
+            debug('Unable to register master_id: ' + clusterId + " into Master collection, exiting application.");
+            process.exit(-1);
+        } else {
+            debug('Registered new master_id: ' + clusterId);
+            cb(master);
+        }
+    });
+}
+function redisMasterRegistration(clusterId, cb) {
+    lock = require('redis-lock')(client);
+    debug('Aquiring lock on databases for registration of Master...');
+    // Two goals on the lock, one create master record in redis.
+    // Create record in mongodb for master server id.
+    lock('masterLock', function(done){
+        debug('Lock aquired, proceeding...creating record in Mongodb');
+        mongodbMasterRegistration(clusterId, function(masterItem){
+            debug('Registration to Mongodb is completed, establishing subscription to redis');
+            client.set(clusterId.toString(),masterItem._id.toString());
+            debug('Redis records created, unlocking');
+            done(function(){
+                debug('Lock released, continuing..pausing for 10 seconds, then removing records simulating a shutdown.');
+                setTimeout(function(){
+                    shutdownCluster('Test shutdown, should remove records');
+                },10000);
+
+            });
+        });
+
+    });
+}
 function shutdownCluster(reason){
     debug(reason);
+    debug('Removing Master record from Mongodb Collection');
+    Master.find({master_id: _clusterId}).remove(function(results){
+        debug('Removed master_id: ' + _clusterId);
+    });
+    debug('Removing Redis record');
+    client.del(_clusterId.toString());
+    debug('Redis record removed');
     cluster.disconnect(function(){
         process.exit(-1);
-    })
-};
+    });
+}
 function initialize_mongo(cb) {
     debug('Initializing MONGOOSE Client and establishing connection to server');
     if (config.mongo == null) {
@@ -123,7 +172,7 @@ function initialize_redis(cb) {
         client.on('ready', function() {
             debug('REDIS server reporting ready...');
             cb();
-        })
+        });
 
         client.on('error', function(){
             debug('Error connecting to REDIS Server at: ' + config.redis + " shutting down cluster.");
@@ -132,15 +181,21 @@ function initialize_redis(cb) {
 
         client.on('end', function(){
             debug('REDIS has been disconnected, as requested');
-        })
-
-
+        });
     }
-};
+}
 function exitHandler(options,err) {
     debug('Exit Handler invoked...');
     if (options.cleanup || options.exit || options.cleanup===null) {
         debug("Shutting down connected services, process is terminating");
+        shutdownCluster('Uncaught exception has occurred, removing records');
+        debug('Removing Master record from Mongodb Collection');
+        Master.find({master_id: _clusterId}).remove(function(results){
+            debug('Removed master_id: ' + _clusterId);
+        });
+        debug('Removing Redis record');
+        client.del(_clusterId.toString());
+        debug('Redis record removed');
         debug('Closing Mongodb Connection');
         mongoose.connection.close(function(){
             debug("Mongodb connection closed");
